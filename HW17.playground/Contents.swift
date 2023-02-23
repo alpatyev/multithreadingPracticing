@@ -1,20 +1,15 @@
 import Foundation
-import Darwin
 
-// MARK: - LIFO storage data type implementation
+// MARK: - LIFO data type
 
-struct Stack<Element> {
+struct Stack<Chip> {
     
     private let storageLock = NSRecursiveLock()
-    private var stack = [Element]()
-
-    var isEmpty: Bool { peek() == nil }
-    var count: Int { stack.count }
+    private var stack = [Chip]()
     
-    func peek() -> Element? { stack.last }
-    mutating func push(_ element: Element) { safely { self.stack.append(element) } }
-    mutating func pop() -> Element? {
-        var element: Element?
+    mutating func push(_ element: Chip) { safely { self.stack.append(element) } }
+    mutating func pop() -> Chip? {
+        var element: Chip?
         safely { element = self.stack.popLast() }
         return element
     }
@@ -28,35 +23,13 @@ struct Stack<Element> {
 
 // MARK: - Storage
 
-protocol StorageDelegate {
-    var isEmpty: Bool { get }
-    var worker: WorkerDelegate? { get set }
-    func popLast() -> Chip?
-}
-
-final class ChipStorage: StorageDelegate {
+final class ChipStorage {
     
-    var isEmpty: Bool { stack.isEmpty }
-    var worker: WorkerDelegate?
-    var generator: GeneratorThread?
-    
+    public let condition = NSCondition()
     public var stack = Stack<Chip>() {
         didSet {
-            worker?.storageUpdated()
-            print("* \(String.currentTime()) * THREAD: [\(Thread.current.name ?? "no name")] storage updated with \(stack.count) chips")
+            condition.signal()
         }
-    }
-    
-    func popLast() -> Chip? {
-        stack.pop()
-    }
-    
-    func getCount() -> Int {
-        stack.count
-    }
-    
-    public func generated(new chip: Chip) {
-        stack.push(chip)
     }
 }
 
@@ -64,7 +37,7 @@ final class ChipStorage: StorageDelegate {
 
 final class GeneratorThread: Thread {
         
-    let storage: ChipStorage
+    private let storage: ChipStorage
         
     init(with storage: ChipStorage) {
         self.storage = storage
@@ -73,65 +46,40 @@ final class GeneratorThread: Thread {
     }
         
     override func main() {
-        print("* \(String.currentTime()) * THREAD: [\(Thread.current.name ?? "no name")] * STARTED * ")
-        var count = 0
         let endTime = Date().addingTimeInterval(20)
         while Date() < endTime {
-            count += 1
             let chip = Chip.make()
-            print("* \(String.currentTime()) * THREAD: [\(Thread.current.name ?? "no name")] generated new chip with type \(chip.chipType)")
-            storage.generated(new: chip)
-            Thread.sleep(forTimeInterval: 2)
+            print("* \(String.currentTime()) * THREAD: [\(Thread.current.name ?? "no name")] generated chip.\(chip.chipType)")
+            storage.stack.push(chip)
+            Thread.sleep(forTimeInterval: 1.5)
         }
-        print("* \(String.currentTime()) * THREAD: [\(Thread.current.name ?? "no name")] * ENDED * RESULT \(count) chips")
     }
 }
 
 // MARK: - Worker thread
 
-protocol WorkerDelegate {
-    var storage: StorageDelegate? { get set }
-    func storageUpdated()
-}
 
-final class WorkerThread: Thread, WorkerDelegate {
+final class WorkerThread: Thread {
     
-    var storage: StorageDelegate?
-    private var count = 0
-    private var isWorking = false
-    private let condition = NSCondition()
+    private var storage: ChipStorage
+    private let condition: NSCondition
     
     init(with storage: ChipStorage) {
         self.storage = storage
+        self.condition = storage.condition
         super.init()
         name = "  worker "
-        storage.worker = self
     }
     
     override func main() {
-        print("* \(String.currentTime()) * THREAD: [\(Thread.current.name ?? "no name")] * STARTED * ")
         while true {
-            isWorking = true
-            if let chip = storage?.popLast() {
-                count += 1
-                print("* \(String.currentTime()) * THREAD: [\(Thread.current.name ?? "no name")] soldering chip with type \(chip.chipType)")
+            if let chip = storage.stack.pop() {
+                print("* \(String.currentTime()) * THREAD: [\(Thread.current.name ?? "no name")] soldered chip.\(chip.chipType)")
                 chip.sodering()
             } else {
-                if let pointer = storage, pointer.isEmpty {
-                    cancel()
-                }
                 condition.wait()
             }
-            isWorking = false
         }
-    }
-    
-    override func cancel() {
-        print("* \(String.currentTime()) * THREAD: [\(Thread.current.name ?? "no name")] * ENDED * RESULT \(count) chips")
-    }
-    
-    func storageUpdated() {
-        condition.signal()
     }
 }
 
