@@ -51,7 +51,7 @@ final class GeneratorThread: Thread {
             let chip = Chip.make()
             print("* \(String.currentTime()) * THREAD: [\(Thread.current.name ?? "no name")] generated chip.\(chip.chipType)")
             storage.stack.push(chip)
-            Thread.sleep(forTimeInterval: 1.5)
+            Thread.sleep(forTimeInterval: 2)
         }
     }
 }
